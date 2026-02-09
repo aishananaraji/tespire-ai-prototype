@@ -1,30 +1,23 @@
-from typing import Dict, Union, Optional, List
-from datetime import datetime
-
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from service.reasoning import classify_intent
-from service.metrics import (
-    get_enrollment_metrics,
-    get_attendance_metrics,
-    get_fee_metrics,
-    get_performance_metrics,
-)
+from service.llm import llm_reason
+from service.period import resolve_period
+from service.memory import get_history, save_turn
+from service.intent_router import route_intent
+from service.response_builder import build_response
 
-# ------------------------
-# APP
-# ------------------------
 
 app = FastAPI(title="Tespire AI Prototype")
 
-# ------------------------
-# INPUT CONTRACT (PRD)
-# ------------------------
+
+# INPUT CONTRACT
 
 class AskContext(BaseModel):
-    role: str  # owner, admin, teacher, parent
+    role: str
     school_id: str
+    session_id: str
 
 
 class AskRequest(BaseModel):
@@ -33,26 +26,13 @@ class AskRequest(BaseModel):
     context: AskContext
 
 
-# ------------------------
-# OUTPUT CONTRACT (PRD)
-# ------------------------
 
-class AskResponse(BaseModel):
-    answer: str
-    supporting_metrics: Dict[str, Union[int, float]]
-    data_gaps: Optional[str]
-    suggested_actions: List[str]
-    data_scope_used: Dict[str, str]
-    timestamp: datetime
-
-
-# ------------------------
-# GUARDRAILS (RBAC)
-# ------------------------
+# GUARDRAILS 
 
 ALLOWED_ROLES = ["owner", "admin", "teacher", "parent"]
 
-def role_guard(role: str):
+
+def role_guard(role: str) -> str:
     role = role.lower()
     if role not in ALLOWED_ROLES:
         raise HTTPException(
@@ -62,96 +42,68 @@ def role_guard(role: str):
     return role
 
 
-# ------------------------
-# HEALTH CHECK
-# ------------------------
 
+# HEALTH CHECK
 @app.get("/")
 def root():
     return {"message": "Tespire AI backend is running"}
 
 
-# ------------------------
 # AI ENDPOINT
-# ------------------------
 
-@app.post("/ask", response_model=AskResponse)
+@app.post("/ask")
 def ask_tespire_ai(payload: AskRequest):
     
     role = role_guard(payload.context.role)
-    intent = classify_intent(payload.question)
+    resolved_period = resolve_period(payload.period)
 
-    # Route to correct metric
-    if intent == "enrollment":
-        metrics = get_enrollment_metrics(payload.context.school_id)
+    
+    history = get_history(payload.context.session_id)
 
-    elif intent == "attendance":
-        metrics = get_attendance_metrics(payload.context.school_id)
-
-    elif intent == "fees":
-        metrics = get_fee_metrics(payload.context.school_id)
-
-    elif intent == "performance":
-        metrics = get_performance_metrics(payload.context.school_id)
-
-    else:
-        return AskResponse(
-            answer="I don't understand this question yet.",
-            supporting_metrics={},
-            data_gaps="Unknown intent",
-            suggested_actions=["Rephrase your question"],
-            data_scope_used={
-                "period": payload.period or "Current Term",
-                "school_id": payload.context.school_id,
-                "role": role,
-            },
-            timestamp=datetime.utcnow()
-        )
-
-    # ------------------------
-    # SAFETY CHECK (DATA GAP)
-    # ------------------------
-
-    if not metrics or metrics.get("total_students", 1) == 0:
-        return AskResponse(
-            answer="No student data available for this school.",
-            supporting_metrics={},
-            data_gaps="No student records found",
-            suggested_actions=["Verify school data source"],
-            data_scope_used={
-                "period": payload.period or "Current Term",
-                "school_id": payload.context.school_id,
-                "role": role,
-            },
-            timestamp=datetime.utcnow()
-        )
-
-    # ------------------------
-    # ROLE-BASED RESPONSE
-    # ------------------------
-
-    if role == "parent":
-        supporting_metrics = {
-            "active_students": metrics.get("active_students", 0)
-        }
-        answer = "Your child is currently active in school."
-
-    else:
-        supporting_metrics = metrics
-        answer = f"{intent.capitalize()} rate is {metrics.get(f'{intent}_rate', 'N/A')}"
-
-    return AskResponse(
-        answer=answer,
-        supporting_metrics=supporting_metrics,
-        data_gaps=None,
-        suggested_actions=[
-            "Review pending enrollments",
-            "Notify admissions office"
-        ],
-        data_scope_used={
-            "period": payload.period or "Current Term",
-            "school_id": payload.context.school_id,
-            "role": role,
-        },
-        timestamp=datetime.utcnow()
+    
+    ai_decision = llm_reason(
+        payload.question,
+        context=payload.context.dict(),
+        history=history
     )
+
+    intent = ai_decision.get("intent")
+
+    
+    if role == "parent" and intent in ["fees", "performance"]:
+        return build_response(
+            answer="You do not have permission to access this information.",
+            supporting_metrics={},
+            data_gaps=None,
+            suggested_actions=[],
+            role=role,
+            period=resolved_period,
+            school_id=payload.context.school_id,
+        )
+
+
+    
+    result = route_intent(
+        intent=intent,
+        context=payload.context,
+        period=resolved_period
+    )
+
+    
+    save_turn(
+        payload.context.session_id,
+        payload.question,
+        result.answer
+    )
+
+    
+    return build_response(
+        answer=result.answer,
+        supporting_metrics=result.supporting_metrics,
+        data_gaps=result.data_gaps,
+        suggested_actions=result.suggested_actions,
+        role=role,
+        period=resolved_period,
+        school_id=payload.context.school_id,
+    )
+

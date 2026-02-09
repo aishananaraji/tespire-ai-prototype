@@ -11,7 +11,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-#-------- Enrollment ------------------
+# Enrollment 
 
 def get_enrollment_metrics(school_id: str):
     if USE_MOCK_DATA:
@@ -24,7 +24,7 @@ def get_enrollment_metrics(school_id: str):
 
     data = students.data
 
-    # Step 1: Safety check FIRST
+    
     if not data:
         return {
             "total_students": 0,
@@ -32,7 +32,7 @@ def get_enrollment_metrics(school_id: str):
             "enrollment_rate": 0
         }
 
-    # Step 2: Normal logic
+    
     total_students = len(data)
     active_students = len([
         s for s in data if s["status"] == "enrolled"
@@ -43,14 +43,14 @@ def get_enrollment_metrics(school_id: str):
         if total_students > 0 else 0
     )
 
-    # Step 3: Final return
+
     return {
         "total_students": total_students,
         "active_students": active_students,
         "enrollment_rate": round(enrollment_rate, 2)
     }
 
-# -------- Attendance --------
+# attendances
 def get_attendance_metrics(school_id: str):
     if USE_MOCK_DATA:
         return {"attendance_rate": 0.88}
@@ -72,7 +72,7 @@ def get_attendance_metrics(school_id: str):
     }
 
 
-# -------- Fees --------
+#  Fees
 def get_fee_metrics(school_id: str):
     if USE_MOCK_DATA:
        return {
@@ -96,7 +96,7 @@ def get_fee_metrics(school_id: str):
     }
 
 
-# -------- Performance --------
+# Performance 
 def get_performance_metrics(school_id: str):
     if USE_MOCK_DATA:
         return {"average_score": 63.5}
@@ -115,3 +115,5 @@ def get_performance_metrics(school_id: str):
     return {
         "average_score": round(avg, 2)
     }
+
+    
