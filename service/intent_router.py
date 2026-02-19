@@ -4,14 +4,14 @@ from service.intents.fees import handle_fees
 from service.intents.performance import handle_performance
 from service.intents.types import IntentResult
 from service.intents.access import INTENT_ACCESS
+from service.intents.child_scope import resolve_child_scope
 
 
-def route_intent(intent: str, context, period) -> IntentResult:
+def route_intent(intent: str, context, period: int) -> IntentResult:
     role = context.role
 
     
     allowed_roles = INTENT_ACCESS.get(intent)
-
     if not allowed_roles:
         return IntentResult(
             answer="I don't understand this question yet.",
@@ -30,19 +30,26 @@ def route_intent(intent: str, context, period) -> IntentResult:
         )
 
     
-    if intent == "enrollment":
-        return handle_enrollment(context, period)
+    scope = resolve_child_scope(context)
 
-    if intent == "attendance":
-        return handle_attendance(context, period)
-
-    if intent == "fees":
-        return handle_fees(context, period)
-
-    if intent == "performance":
-        return handle_performance(context, period)
+    if not scope.school_id:
+        return IntentResult(
+            answer="Invalid request context.",
+            supporting_metrics={},
+            data_gaps="Missing school_id",
+            suggested_actions=[]
+        )
 
     
+    if intent == "enrollment":
+        return handle_enrollment(scope, period)
+    if intent == "attendance":
+        return handle_attendance(scope, period)
+    if intent == "fees":
+        return handle_fees(scope, period)
+    if intent == "performance":
+        return handle_performance(scope, period)
+
     return IntentResult(
         answer="I don't understand this question yet.",
         supporting_metrics={},
