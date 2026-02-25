@@ -57,7 +57,7 @@ def get_attendance_metrics(
     data = response.data or []
 
     if not data:
-        return {"attendance_rate": 0}
+        return {"attendance_rate": None}
 
     present_count = len(
         [r for r in data if r.get("present") is True]
@@ -140,7 +140,7 @@ def get_performance_metrics(
     data = response.data or []
 
     if not data:
-        return {"average_score": 0}
+        return {"average_score": None}
 
     avg = sum(
         r.get("average_score", 0)

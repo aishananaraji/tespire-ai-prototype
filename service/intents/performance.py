@@ -1,14 +1,16 @@
 from service.metrics import get_performance_metrics
 from service.intents.types import IntentResult
+from service.period_models import ResolvedPeriod
+from service.intents.scope import AccessScope
 
 
-def handle_performance(scope, period) -> IntentResult:
+def handle_performance(scope: AccessScope, period: ResolvedPeriod) -> IntentResult:
+
     metrics = get_performance_metrics(
         school_id=scope.school_id,
         student_id=scope.student_id,
-        session_term_id=period["id"]
-        )
-
+        session_term_id=period.id
+    )
 
     average_score = metrics.get("average_score")
 
@@ -20,15 +22,15 @@ def handle_performance(scope, period) -> IntentResult:
             suggested_actions=["Verify academic performance data source"]
         )
 
-    if scope["student_id"]:
+    if scope.student_id:
         answer = (
-            f"Your child's average performance score for {period} is "
-            f"{average_score}."
+            f"Your child's average performance score for {period.label} "
+            f"is {average_score}."
         )
     else:
         answer = (
-            f"The overall average performance score for {period} is "
-            f"{average_score}."
+            f"The overall average performance score for {period.label} "
+            f"is {average_score}."
         )
 
     return IntentResult(
